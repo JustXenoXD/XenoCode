@@ -20,6 +20,7 @@ from xenocode.tools.registry import build_default_registry
 from xenocode.security.approvals import TerminalApproval
 from xenocode.workspace.indexer import WorkspaceIndexer
 from xenocode.workspace.repo_map import RepositoryMapBuilder
+from xenocode.memory.store import MemoryStore
 
 
 class OrchestratorError(RuntimeError):
@@ -42,6 +43,7 @@ class XenoOrchestrator:
         self.context_builder = ProjectContextBuilder(
             config.workspace,
         )
+        self.memory_store = MemoryStore(config.workspace)
 
         self.approval_callback = (
             approval_callback
@@ -81,6 +83,7 @@ class XenoOrchestrator:
             else build_default_registry(
                 config.workspace,
                 swarm_runner=run_swarm_tool,
+                memory_store=self.memory_store,
             )
         )
 
@@ -179,7 +182,7 @@ class XenoOrchestrator:
             ) from exc
 
     def _build_project_context(self) -> str:
-        """Build shared context enriched with a repository map."""
+        """Build shared context with architecture and project memory."""
 
         context = self.context_builder.build()
 
@@ -192,12 +195,20 @@ class XenoOrchestrator:
             max_symbols=100,
         ).build(index)
 
-        return (
-            context
-            + "\n\n"
-            + "PROJECT ARCHITECTURE MAP:\n"
-            + repository_map
+        sections = [
+            context,
+            "PROJECT ARCHITECTURE MAP:\n" + repository_map,
+        ]
+
+        memory_context = self.memory_store.to_context(
+            limit=12,
+            max_chars=4000,
         )
+
+        if memory_context:
+            sections.append(memory_context)
+
+        return "\n\n".join(sections)
 
     def run(
         self,

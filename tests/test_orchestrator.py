@@ -60,6 +60,12 @@ class OrchestratorTests(unittest.TestCase):
 
         agent = XenoOrchestrator(config, provider)
 
+        agent.memory_store.add(
+            "decision",
+            "Use pathlib for filesystem operations.",
+            tags=["python", "architecture"],
+        )
+
         result = agent.run("Improve this project.")
 
         self.assertEqual(
@@ -79,6 +85,11 @@ class OrchestratorTests(unittest.TestCase):
                 if message.get("role") == "user"
             )
             self.assertIn("# Repository Map:", user_content)
+            self.assertIn("PROJECT MEMORY", user_content)
+            self.assertIn(
+                "Use pathlib for filesystem operations.",
+                user_content,
+            )
 
         engineer_tools = provider.requests[1]["tools"]
         tool_names = [
@@ -86,6 +97,9 @@ class OrchestratorTests(unittest.TestCase):
             for item in engineer_tools
         ]
         self.assertIn("get_repository_map", tool_names)
+        self.assertIn("search_memory", tool_names)
+        self.assertIn("remember_memory", tool_names)
+        self.assertIn("delete_memory", tool_names)
 
     def test_plan_only(self):
 

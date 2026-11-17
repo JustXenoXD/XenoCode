@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from xenocode.security.path_guard import PathGuard, PathViolation
+from xenocode.memory.store import MemoryStore
 from xenocode.tools.registry import (
     ApprovalDenied,
     build_default_registry,
@@ -21,7 +22,11 @@ class ToolTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        self.registry = build_default_registry(self.root)
+        self.memory_store = MemoryStore(self.root)
+        self.registry = build_default_registry(
+            self.root,
+            memory_store=self.memory_store,
+        )
 
     def tearDown(self):
         self.temp.cleanup()
@@ -142,6 +147,68 @@ class ToolTests(unittest.TestCase):
         )
 
         self.assertIn("XenoCode", result)
+
+
+    def test_remember_memory_requires_approval(self):
+        from xenocode.tools.registry import ApprovalDenied
+
+        with self.assertRaises(ApprovalDenied):
+            self.registry.execute(
+                "remember_memory",
+                {
+                    "category": "decision",
+                    "content": "Use pathlib for filesystem paths.",
+                },
+            )
+
+        result = self.registry.execute(
+            "remember_memory",
+            {
+                "category": "decision",
+                "content": "Use pathlib for filesystem paths.",
+                "tags": ["python", "filesystem"],
+            },
+            approval=lambda name, args: True,
+        )
+
+        self.assertIn("saved successfully", result.lower())
+        self.assertEqual(len(self.memory_store.recent()), 1)
+
+    def test_search_memory_does_not_require_approval(self):
+        self.memory_store.add(
+            "convention",
+            "Use snake_case for Python functions.",
+        )
+
+        result = self.registry.execute(
+            "search_memory",
+            {"query": "snake_case"},
+            approval=lambda name, args: False,
+        )
+
+        self.assertIn("snake_case", result)
+
+    def test_delete_memory_requires_approval(self):
+        from xenocode.tools.registry import ApprovalDenied
+
+        entry = self.memory_store.add(
+            "note",
+            "Temporary project note.",
+        )
+
+        arguments = {"memory_id": entry.id}
+
+        with self.assertRaises(ApprovalDenied):
+            self.registry.execute("delete_memory", arguments)
+
+        result = self.registry.execute(
+            "delete_memory",
+            arguments,
+            approval=lambda name, args: True,
+        )
+
+        self.assertIn("deleted successfully", result.lower())
+        self.assertEqual(self.memory_store.recent(), [])
 
 
 if __name__ == "__main__":

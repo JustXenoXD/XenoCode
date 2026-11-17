@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from xenocode.security.path_guard import PathGuard
+from xenocode.memory.store import MemoryStore
 from xenocode.tools.filesystem import FileSystemTools
 from xenocode.tools.math_engine import MathEngine
 from xenocode.tools.search import SearchTools
@@ -162,6 +163,7 @@ class ToolRegistry:
 def build_default_registry(
     workspace,
     swarm_runner: Callable | None = None,
+    memory_store: MemoryStore | None = None,
 ) -> ToolRegistry:
 
     guard = PathGuard(workspace)
@@ -171,6 +173,99 @@ def build_default_registry(
     tests = TestRunner(guard)
 
     registry = ToolRegistry()
+
+    memory = memory_store if memory_store is not None else MemoryStore(workspace)
+
+    def search_memory(query, limit=10, category=None):
+        results = memory.search(
+            query=query,
+            limit=limit,
+            category=category,
+        )
+
+        if not results:
+            return "No matching project memories."
+
+        lines = []
+
+        for entry in results:
+            tags = ", ".join(entry.tags)
+            suffix = f" | tags: {tags}" if tags else ""
+
+            lines.append(
+                f"[{entry.id}] [{entry.category}] "
+                f"{entry.content}{suffix}"
+            )
+
+        return "\n".join(lines)
+
+    def remember_memory(category, content, tags=None):
+        entry = memory.add(
+            category=category,
+            content=content,
+            tags=tags,
+        )
+
+        return (
+            f"Memory saved successfully. "
+            f"ID: {entry.id}. Category: {entry.category}."
+        )
+
+    def delete_memory(memory_id):
+        deleted = memory.delete(memory_id)
+
+        if not deleted:
+            return "No memory entry found with that ID."
+
+        return f"Memory {memory_id} deleted successfully."
+
+    registry.register(
+        "search_memory",
+        "Search previously approved project memories.",
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer"},
+                "category": {"type": "string"},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        search_memory,
+    )
+
+    registry.register(
+        "remember_memory",
+        "Save a verified project fact or decision. Requires user approval.",
+        {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string"},
+                "content": {"type": "string"},
+                "tags": {"type": "array"},
+            },
+            "required": ["category", "content"],
+            "additionalProperties": False,
+        },
+        remember_memory,
+        requires_approval=True,
+    )
+
+    registry.register(
+        "delete_memory",
+        "Delete a project memory by ID. Requires user approval.",
+        {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string"},
+            },
+            "required": ["memory_id"],
+            "additionalProperties": False,
+        },
+        delete_memory,
+        requires_approval=True,
+    )
 
     def get_repository_map():
         index = WorkspaceIndexer(workspace).build()

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from xenocode.tools.engine import ToolCallingEngine
+from xenocode.memory.store import MemoryStore
 from xenocode.tools.registry import build_default_registry
 
 
@@ -177,6 +178,62 @@ class ToolEngineTests(unittest.TestCase):
 
         self.assertEqual(len(tool_messages), 1)
         self.assertEqual(tool_messages[0]["content"], "6000")
+
+
+    def test_memory_tool_call_cycle(self):
+        provider = FakeProvider([
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "remember_memory",
+                            "arguments": {
+                                "category": "decision",
+                                "content": "Keep providers separate from orchestration.",
+                                "tags": ["architecture"],
+                            },
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "The architecture decision was saved.",
+            },
+        ])
+
+        store = MemoryStore(self.root)
+        registry = build_default_registry(
+            self.root,
+            memory_store=store,
+        )
+
+        engine = ToolCallingEngine(
+            FakeAgent(provider),
+            registry,
+            max_rounds=4,
+        )
+
+        result = engine.run(
+            "Save the verified architecture decision.",
+            "Test project.",
+            approval=lambda name, args: True,
+        )
+
+        self.assertIn("saved", result.lower())
+        self.assertEqual(len(store.recent()), 1)
+
+        tool_messages = [
+            item
+            for item in provider.requests[1]["messages"]
+            if item["role"] == "tool"
+            and item.get("tool_name") == "remember_memory"
+        ]
+
+        self.assertEqual(len(tool_messages), 1)
+        self.assertIn("saved successfully", tool_messages[0]["content"].lower())
 
 
 if __name__ == "__main__":
